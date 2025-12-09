@@ -16,10 +16,6 @@ export default function Configuration() {
   const tokenClientRef = useRef<any>(null); 
   const [connected, setConnected] = useState(false);
 
-  const VECTOR_DB_URL = process.env.NEXT_PUBLIC_VECTOR_DB_URL || 'http://localhost:8003';
-  const VECTOR_DB_API_KEY = process.env.NEXT_PUBLIC_VECTOR_DB_API_KEY || 'dev-vectordb-key-12345';
-  const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
@@ -81,70 +77,82 @@ export default function Configuration() {
 };
 
 // Minimal Google Identity Services setup: load script and render button
-useEffect(() => {
+  const MAIN_SERVICE_URL = process.env.NEXT_PUBLIC_MAIN_SERVICE_URL || 'http://localhost:8000';
+  const FRONTEND_API_KEY = process.env.NEXT_PUBLIC_FRONTEND_API_KEY || 'backend-example-key';
   const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
-  const VECTOR_DB_URL = process.env.NEXT_PUBLIC_VECTOR_DB_URL || 'http://localhost:8003';
-  const VECTOR_DB_API_KEY = process.env.NEXT_PUBLIC_VECTOR_DB_API_KEY || 'db-example-key';
 
-  if (!CLIENT_ID) return;
-  if (initDoneRef.current) return;
+  // Minimal Google Identity Services setup: load script and render button
+  useEffect(() => {
+    if (!CLIENT_ID) return;
+    if (initDoneRef.current) return;
 
-  const init = () => {
-    // @ts-ignore
-    if (!window.google?.accounts?.oauth2) return;
+    const init = () => {
+      // @ts-ignore
+      if (!window.google?.accounts?.oauth2) return;
 
-    // Initialize ID sign-in as before
-    // @ts-ignore
-   tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/drive.readonly',
-      callback: async (tokenResponse: any) => {
-        const accessToken = tokenResponse?.access_token;
-        console.log('Access Token:', accessToken);
-        console.log('Full Token Response:', tokenResponse);
-        if (!accessToken) return;
-        setConnected(true);
+      // Initialize ID sign-in
+      // @ts-ignore
+      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/drive.readonly',
+        callback: async (tokenResponse: any) => {
+          const accessToken = tokenResponse?.access_token;
+          console.log('Access Token:', accessToken ? '[RECEIVED]' : '[none]');
+          console.log('Full Token Response:', tokenResponse);
+          if (!accessToken) return;
+          setConnected(true);
 
-        try {
-          const res = await fetch(`${VECTOR_DB_URL.replace(/\/$/, '')}/fetch-and-ingest/drive`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-API-Key': VECTOR_DB_API_KEY,
-            },
-            body: JSON.stringify({
-              access_token: accessToken,
-              collection_name: collectionName,
-              max_files: 200,
-              ingest: true,
-            }),
-          });
-          if (!res.ok) {
-            console.error('Vector DB ingest failed', res.status, await res.text());
-          } else {
-            console.log('Vector DB ingest succeeded', await res.json());
+          // FIXED: include /v1 prefix (backend exposes /v1/fetch-and-ingest/drive)
+          const endpoint = `${MAIN_SERVICE_URL.replace(/\/$/, '')}/v1/fetch-and-ingest/drive`;
+          console.log('[Drive] POST ->', endpoint);
+
+          try {
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': FRONTEND_API_KEY, // must match backend.settings.frontend_api_key
+              },
+              body: JSON.stringify({
+                access_token: accessToken,
+                collection_name: collectionName,
+                max_files: 200,
+                ingest: true,
+              }),
+            });
+
+            const text = await res.text();
+            if (!res.ok) {
+              console.error('[Drive] ingest failed', res.status, text);
+            } else {
+              try {
+                const json = JSON.parse(text);
+                console.log('[Drive] ingest succeeded', json);
+              } catch {
+                console.log('[Drive] ingest succeeded (non-json)', text);
+              }
+            }
+          } catch (err) {
+            console.error('[Drive] network/error calling main service:', err);
           }
-        } catch (err) {
-          console.error('Failed to call vector DB', err);
-        }
-      },
-    });
+        },
+      });
 
-    initDoneRef.current = true;
-  };
+      initDoneRef.current = true;
+    };
 
-  const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-  if (existing) {
-    init();
-    return;
-  }
-  const s = document.createElement('script');
-  s.src = 'https://accounts.google.com/gsi/client';
-  s.async = true;
-  s.defer = true;
-  s.onload = init;
-  document.head.appendChild(s);
-}, [CLIENT_ID, collectionName, VECTOR_DB_URL, VECTOR_DB_API_KEY]);
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      init();
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = init;
+    document.head.appendChild(s);
+  }, [CLIENT_ID, collectionName, MAIN_SERVICE_URL, FRONTEND_API_KEY]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
