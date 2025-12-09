@@ -1,10 +1,15 @@
 'use client';
-
+import {SYSTEM_PROMPTS, SystemPromptId, SystemPromptOption} from '../app/api/config/system-prompts';
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 
 type Role = 'system' | 'user' | 'assistant';
 type Message = { role: Role; content: string };
+
+// "server" = prompt coming from /api/config/prompts
+type PromptSourceId = 'server' | SystemPromptId;
+
+const FALLBACK_PROMPT = 'You are a helpful assistant. Keep replies brief unless asked for detail.';
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -12,41 +17,59 @@ export default function Chat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [systemMessageLoaded, setSystemMessageLoaded] = useState(false);
+  const [serverSystemPrompt, setServerSystemPrompt] = useState<string | null>(null);
+  const [selectedPromptId, setSelectedPromptId] = useState<PromptSourceId>('server');
+
   const viewportRef = useRef<HTMLDivElement>(null);
 
-  // Load system message from config on mount
-  useEffect(() => {
-    const loadSystemMessage = async () => {
-      try {
-        const response = await fetch('/api/config/prompts');
-        if (response.ok) {
-          const data = await response.json();
-          setMessages([{
-            role: 'system',
-            content: data.system_message || 'You are a helpful assistant. Keep replies brief unless asked for detail.',
-          }]);
-          setSystemMessageLoaded(true);
-        } else {
-          // Fallback to default if API fails
-          setMessages([{
-            role: 'system',
-            content: 'You are a helpful assistant. Keep replies brief unless asked for detail.',
-          }]);
-          setSystemMessageLoaded(true);
-        }
-      } catch (error) {
-        console.error('Failed to load system message:', error);
-        // Fallback to default
-        setMessages([{
-          role: 'system',
-          content: 'You are a helpful assistant. Keep replies brief unless asked for detail.',
-        }]);
-        setSystemMessageLoaded(true);
-      }
-    };
+  // Helper: ensure there is exactly one system message at the top
+const applySystemPrompt = (content: string) => {
+  setMessages((prev) => {
+    const rest = prev.filter((m) => m.role !== 'system');
+    return [{ role: 'system', content }, ...rest];
+  });
+};
 
-    loadSystemMessage();
-  }, []);
+
+
+  // Load system message from config on mount
+ useEffect(() => {
+  const loadSystemMessage = async () => {
+    try {
+      const response = await fetch('/api/config/prompts');
+      if (response.ok) {
+        const data = await response.json();
+        setServerSystemPrompt(data.system_message || FALLBACK_PROMPT);
+      } else {
+        setServerSystemPrompt(FALLBACK_PROMPT);
+      }
+    } catch (error) {
+      console.error('Failed to load system message', error);
+      setServerSystemPrompt(FALLBACK_PROMPT);
+    }
+  };
+
+  loadSystemMessage();
+}, []);
+
+
+
+useEffect(() => {
+  if (selectedPromptId === 'server') {
+    if (!serverSystemPrompt) return; // still loading
+    applySystemPrompt(serverSystemPrompt);
+    setSystemMessageLoaded(true);
+    return;
+  }
+
+  const option = SYSTEM_PROMPTS.find((p) => p.id === selectedPromptId);
+  if (!option) return;
+
+  applySystemPrompt(option.content);
+  setSystemMessageLoaded(true);
+}, [selectedPromptId, serverSystemPrompt]);
+
+
 
   useEffect(() => {
     viewportRef.current?.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' });
@@ -126,7 +149,32 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
+    {/* System prompt selector */}
+    <div className="flex items-center gap-2">
+      <label
+        htmlFor="system-prompt"
+        className="text-sm text-muted-foreground"
+      >
+        System prompt
+      </label>
+      <select
+        id="system-prompt"
+        className="rounded-xl border border-input bg-background px-2 py-1 text-sm text-foreground"
+        value={selectedPromptId}
+        onChange={(e) =>
+          setSelectedPromptId(e.target.value as PromptSourceId)
+        }
+        disabled={!serverSystemPrompt && selectedPromptId === 'server'}
+      >
+        <option value="server">From config (API)</option>
+        {SYSTEM_PROMPTS.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+    </div>
       <div
         ref={viewportRef}
         className="h-[60vh] overflow-auto rounded-2xl border border-border bg-card text-card-foreground p-4 shadow-sm"
@@ -166,15 +214,17 @@ export default function Chat() {
           placeholder="Ask something…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          disabled={isStreaming}
+          disabled={isStreaming || !systemMessageLoaded}
         />
+
         <button
           className="rounded-xl bg-primary text-primary-foreground px-4 py-2 shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50"
-          disabled={isStreaming || !input.trim()}
+          disabled={isStreaming || !input.trim() || !systemMessageLoaded}
         >
           Send
         </button>
       </form>
+
 
       {error && (
         <div className="text-sm text-destructive">
