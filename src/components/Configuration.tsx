@@ -77,8 +77,8 @@ export default function Configuration() {
 };
 
 // Minimal Google Identity Services setup: load script and render button
-  const MAIN_SERVICE_URL = process.env.NEXT_PUBLIC_MAIN_SERVICE_URL || 'http://localhost:8000';
-  const FRONTEND_API_KEY = process.env.NEXT_PUBLIC_FRONTEND_API_KEY || 'backend-example-key';
+  const BACKEND_API_URL = process.env.BACKEND_API_URL || 'http://localhost:8000';
+  const BACKEND_API_KEY = process.env.BACKEND_API_KEY || 'backend-example-key';
   const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
   // Minimal Google Identity Services setup: load script and render button
@@ -103,7 +103,7 @@ export default function Configuration() {
           setConnected(true);
 
           // FIXED: include /v1 prefix (backend exposes /v1/fetch-and-ingest/drive)
-          const endpoint = `${MAIN_SERVICE_URL.replace(/\/$/, '')}/v1/fetch-and-ingest/drive`;
+          const endpoint = `${BACKEND_API_URL.replace(/\/$/, '')}/v1/fetch-and-ingest/drive`;
           console.log('[Drive] POST ->', endpoint);
 
           try {
@@ -111,7 +111,7 @@ export default function Configuration() {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'X-API-Key': FRONTEND_API_KEY, // must match backend.settings.frontend_api_key
+                'X-API-Key': BACKEND_API_KEY, // must match backend.settings.frontend_api_key
               },
               body: JSON.stringify({
                 access_token: accessToken,
@@ -152,7 +152,7 @@ export default function Configuration() {
     s.defer = true;
     s.onload = init;
     document.head.appendChild(s);
-  }, [CLIENT_ID, collectionName, MAIN_SERVICE_URL, FRONTEND_API_KEY]);
+  }, [CLIENT_ID, collectionName, BACKEND_API_URL, BACKEND_API_KEY]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
